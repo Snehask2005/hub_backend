@@ -52,7 +52,8 @@ async def create_todo(
         due_date=body.due_date,
         priority=body.priority,
         reminder_time=body.reminder_time,
-)
+        reminder_sent=False
+    )
 
     db.add(todo)
     await db.flush()

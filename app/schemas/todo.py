@@ -1,23 +1,26 @@
-import uuid
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.subtask import SubtaskResponse
+
+TodoPriority = Literal["low", "medium", "high"]
 
 
 class CreateTodoRequest(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=500)
     description: str | None = None
     due_date: datetime | None = None
-    priority: Literal["low", "medium", "high"] = "medium"
+    priority: TodoPriority = "medium"
     reminder_time: datetime | None = None
 
 
 class UpdateTodoRequest(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = None
-    due_date: datetime | None = None
-    priority: Literal["low", "medium", "high"] | None = None
+    due_date: datetime |None = None
+    priority: TodoPriority | None = None
     reminder_time: datetime | None = None
 
 
@@ -26,16 +29,17 @@ class CompleteToggleRequest(BaseModel):
 
 
 class TodoResponse(BaseModel):
-    id: uuid.UUID
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user_id: UUID
     title: str
     description: str | None
     completed: bool
     due_date: datetime | None
-    priority: Literal["low", "medium", "high"]
+    priority: TodoPriority
     reminder_time: datetime | None
+    reminder_sent: bool
     subtasks: list[SubtaskResponse] = []
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
