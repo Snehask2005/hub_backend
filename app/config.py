@@ -2,39 +2,47 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Application
     app_name: str = "CixioHub API"
     debug: bool = False
 
     # Database
-    database_url: str = "postgresql+asyncpg://cixiohub:cixiohub@localhost:5432/cixiohub"
+    database_url: str
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str
 
     # JWT
-    secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"
+    secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    # Ollama (accessed via the AI service in full-stack; kept here for direct dev)
+    # Notification Service
+    notification_service_url: str = "http://localhost:8001/api/v1/notify/send"
+
+    # AI / LLM Configuration
+    use_remote_ai: bool = True
+    ai_service_url: str = "http://localhost:8003"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:3b"
     ollama_embed_model: str = "nomic-embed-text"
-
-    # AI Service — handles LLM, RAG, document extraction
-    ai_service_url: str = "http://localhost:8003"
+    ollama_vision_model: str = "qwen3-vl:2b"
+    enable_vision_rag: bool = True
+    enable_web_search: bool = False
+    tavily_api_key: str | None = None
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "user_documents"
+    enable_reranker: bool = False
+    reranker_model: str = "mixedbread-ai/mxbai-rerank-base-v1"
     n8n_webhook_url: str = "http://localhost:5678/webhook/document-summary"
 
-    # ChromaDB
-    chroma_host: str = "localhost"
-    chroma_port: int = 8002
-
     # RabbitMQ
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_url: str
 
     # AWS / S3 / MinIO
     aws_access_key_id: str = ""
@@ -56,5 +64,15 @@ class Settings(BaseSettings):
     # File upload
     max_upload_size_mb: int = 50
 
+    # Test constants
+    test_email: str = ""
+    test_password: str = ""
+    test_name: str = ""
+    test_phone: str = ""
+
+    #cloudinary details
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
 
 settings = Settings()

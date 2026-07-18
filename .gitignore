@@ -1,0 +1,38 @@
+# Environments
+.env
+.env.docker
+.venv
+env/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Databases
+*.db
+*.sqlite3
+
+# IDEs and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Temporary files / logs
+*.log
+
+# Redis
+dump.rdb
+
+# Uploads
+uploads/
+# Document Uploads (local dev storage — may contain sensitive files)
+uploads/
+
+# Vector Database Local Storage
+qdrant_storage/
+qdrant_data/
+chroma_data/

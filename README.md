@@ -1,403 +1,235 @@
-# Backend — Hub API Server
+# CixioHub Backend API
 
-FastAPI-based backend for Hub. Handles authentication, AI chat, document management, todo list, and admin operations.
+This is the FastAPI backend for CixioHub, an AI-powered chat platform for TKM students.
+
+## Features
+- **FastAPI** for high-performance, async API endpoints
+- **SQLAlchemy 2.0** for async database ORM
+- **Alembic** for database migrations
+- **Domain-Driven Design** (Vertical Slicing) for modularity (e.g., dedicated `app/auth/` module)
+
+## Prerequisites
+- Python 3.10+
+- PostgreSQL (or SQLite for local dev)
+- Redis (Required for rate limiting and session management)
+- Qdrant (Required for vector storage and RAG document search)
+- Ollama (Required for LLM chat and embeddings generation)
+
+## Setup Instructions
+
+1. **Create and activate a virtual environment:**
+   * **Linux/macOS:**
+     ```bash
+     python3 -m venv venv
+     source venv/bin/activate
+     ```
+   * **Windows (Command Prompt):**
+     ```cmd
+     python -m venv venv
+     venv\Scripts\activate.bat
+     ```
+   * **Windows (PowerShell):**
+     ```powershell
+     python -m venv venv
+     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+     .\venv\Scripts\Activate.ps1
+     ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment variables:**
+   Create a `.env` file in the root directory (alongside `main.py`). If using Postgres, configure it like so:
+   ```env
+   DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/cixiohub
+   REDIS_URL=redis://localhost:6379/0
+   
+   # Ollama configurations
+   OLLAMA_BASE_URL=http://localhost:11434
+   OLLAMA_MODEL=qwen3.5:4b
+   OLLAMA_EMBED_MODEL=nomic-embed-text
+   
+   # Qdrant configurations
+   QDRANT_URL=http://localhost:6333
+   QDRANT_COLLECTION=user_documents
+   
+   # Vision RAG configurations
+   ENABLE_VISION_RAG=True
+   OLLAMA_VISION_MODEL=qwen3-vl:2b
+   ```
+   *(For a zero-setup SQLite database, run `pip install aiosqlite` and use `DATABASE_URL=sqlite+aiosqlite:///./local_dev.db`)*
+
+4. **Set up Redis:**
+   Ensure Redis is running locally on the default port (6379), which is used for rate limiting and session management.
+   ```bash
+   # Ubuntu/Debian: sudo apt install redis && sudo systemctl start redis
+   # macOS: brew install redis && brew services start redis
+   # Docker: docker run -d -p 6379:6379 redis
+   ```
+
+5. **Set up Qdrant Vector DB:**
+   Start the Qdrant container locally to index and search vector embeddings:
+   ```bash
+   docker run -d -p 6333:6333 -p 6334:6334 -v qdrant_storage:/qdrant/storage qdrant/qdrant
+   ```
+
+6. **Set up Ollama & pull embedding/LLM models:**
+   Ensure Ollama is running and download the embedding model and LLM:
+   ```bash
+   # Pull the embedding model (used for vector storage)
+   ollama pull nomic-embed-text
+
+   # Pull the chat model (e.g. qwen3.5:4b, llama3.2:3b, or deepseek-r1)
+   ollama pull qwen3.5:4b
+
+   # Pull the vision model (used for page re-inspection fallback)
+   ollama pull qwen3-vl:2b
+   ```
+
+7. **Set up Local Email Catcher (SMTP):**
+   Ensure an SMTP mail catcher is running on port `1025` to receive OTP codes and password reset links.
+   * **Using Node (Easiest, zero-setup)**:
+     ```bash
+     npx maildev --smtp 1025 --web 8025
+     ```
+   * **Using Docker**:
+     ```bash
+     docker run -d --name hub-mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+     ```
+   You can view caught emails in your web browser at `http://localhost:8025`.
+   *(If no mail catcher is running, emails will fall back to printing directly inside the backend server console).*
+
+8. **Run Database Migrations (Alembic):**
+   ```bash
+   alembic upgrade head
+   ```
+
+9. **Start the Development Server:**
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+
+## Setup using Docker (FastAPI Web App Only)
+
+If you want to run only the FastAPI application inside a Docker container while your other services (PostgreSQL, Redis, Qdrant, RabbitMQ, Mailpit, and Ollama) run natively on your host machine:
+
+### 1. Ensure Host Services are Running
+
+Make sure your databases and helper services are active on your local device. If you run them via Docker containers locally:
+*   **Mailpit (SMTP):** `docker start hub-mailpit` (or run it fresh: `docker run -d --name hub-mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit`)
+*   **Qdrant (Vector DB):** `docker start local-qdrant` (or run it fresh: `docker run -d --name local-qdrant -p 6333:6333 -p 6334:6334 -v qdrant_storage:/qdrant/storage qdrant/qdrant:latest`)
+*   **PostgreSQL:** `sudo systemctl start postgresql` (or make sure your native service is active)
+*   **Redis:** `sudo systemctl start redis` (or make sure your native service is active)
+*   **Ollama:** `ollama serve` (ensure the server daemon is active)
 
 ---
 
-## Tech Stack
+### 2. Linux Setup (Default)
 
-| Tool | Purpose |
-|------|---------|
-| **Python 3.11+** | Language |
-| **FastAPI** | Web framework |
-| **SQLAlchemy 2.x** | ORM |
-| **Alembic** | Database migrations |
-| **PostgreSQL 16** | Primary database |
-| **pgvector** | Vector similarity search (RAG) |
-| **Redis 7** | Session cache, rate limiting |
-| **ChromaDB** | Vector store for document embeddings |
-| **Ollama** | Local LLM (llama3.2:3b dev / llama3.1:70b prod) |
-| **Passlib + bcrypt** | Password hashing |
-| **python-jose** | JWT tokens |
-| **aio-pika** | RabbitMQ async client |
-| **boto3** | AWS S3 file storage |
+Since you are running Linux, the default configuration uses **Host Networking** (`network_mode: "host"`). This connects the container directly to your host's loopback interface (`localhost`) without extra port mappings.
+
+1. **Copy the Docker environment template:**
+   * **Linux/macOS/Git Bash:**
+     ```bash
+     cp .env.docker .env
+     ```
+   * **Windows (CMD):**
+     ```cmd
+     copy .env.docker .env
+     ```
+2. **Start the backend container:**
+   ```bash
+   docker compose up --build
+   ```
 
 ---
 
-## Project Structure
+### 3. Windows & macOS Setup
 
+Because Windows and macOS run Docker inside a lightweight virtual machine, they do not support Linux's native `network_mode: "host"`. You need to adjust two settings to connect the container to your host machine:
+
+#### A. Configure Docker Desktop (Windows Only)
+- Ensure **Docker Desktop** is running.
+- Open **Settings > General** and check **"Use the WSL 2 based engine"** (enables WSL 2 integration).
+- Open **Settings > Resources > WSL integration** and turn on integration for your active WSL Linux distro.
+
+#### B. Modify `docker-compose.yml`
+Open [docker-compose.yml](file:///home/albin/Cixio/hub_backend/docker-compose.yml) and change it to bridge mode:
+```yaml
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # 1. Comment out or remove network_mode:
+    # network_mode: "host"
+    
+    # 2. Explicitly map ports:
+    ports:
+      - "8000:8000"
+    
+    volumes:
+      - .:/app
+      - uploads:/app/uploads
+    env_file:
+      - .env
+    
+    # 3. Add extra hosts mapping:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
-backend/
-├── app/
-│   ├── main.py              # FastAPI app entry point, router registration
-│   ├── config.py            # Settings loaded from environment variables
-│   ├── database.py          # SQLAlchemy engine, session factory
-│   ├── dependencies.py      # Shared FastAPI dependencies (get_db, get_current_user)
-│   │
-│   ├── models/              # SQLAlchemy ORM models
-│   │   ├── __init__.py
-│   │   ├── user.py
-│   │   ├── chat.py          # ChatSession, ChatMessage
-│   │   ├── document.py
-│   │   └── todo.py
-│   │
-│   ├── schemas/             # Pydantic request/response models
-│   │   ├── __init__.py
-│   │   ├── auth.py
-│   │   ├── chat.py
-│   │   ├── document.py
-│   │   ├── todo.py
-│   │   └── notify.py
-│   │
-│   ├── routers/             # Route handlers
-│   │   ├── __init__.py
-│   │   ├── auth.py          # /auth/*
-│   │   ├── chat.py          # /chat/*
-│   │   ├── documents.py     # /documents/*
-│   │   ├── todos.py         # /todos/*
-│   │   ├── admin.py         # /admin/*
-│   │   └── notify.py        # /notify/* (publishes to queue)
-│   │
-│   ├── services/            # Business logic
-│   │   ├── __init__.py
-│   │   ├── auth_service.py      # JWT, password hashing, Google OAuth
-│   │   ├── llm_service.py       # Ollama HTTP client, streaming
-│   │   ├── rag_service.py       # ChromaDB operations, embeddings
-│   │   ├── document_service.py  # File parsing (PDF, DOCX, image)
-│   │   ├── storage_service.py   # S3 / local filesystem upload
-│   │   └── queue_service.py     # RabbitMQ publisher
-│   │
-│   └── middleware/
-│       └── auth.py          # JWT verification middleware
-│
-├── alembic/
-│   ├── env.py
-│   └── versions/            # Migration files (auto-generated)
-│
-├── tests/
-│   ├── conftest.py
-│   ├── test_auth.py
-│   ├── test_chat.py
-│   └── test_documents.py
-│
-├── alembic.ini
-├── requirements.txt
-├── Dockerfile
-└── .env.example
+
+#### C. Modify your `.env` file
+Change all occurrences of `localhost` in your `.env` file to **`host.docker.internal`** so the container can resolve your computer's IP address:
+```env
+DATABASE_URL=postgresql+asyncpg://cixiohub:cixiohub@host.docker.internal:5432/cixiohub
+REDIS_URL=redis://host.docker.internal:6379/0
+QDRANT_URL=http://host.docker.internal:6333
+RABBITMQ_URL=amqp://guest:guest@host.docker.internal:5672/
+SMTP_HOST=host.docker.internal
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 ```
 
----
-
-## Setup & Running
-
-### 1. Prerequisites
-- Python 3.11+
-- PostgreSQL running (or use Docker Compose from `infra/`)
-- Redis running
-- Ollama running: `ollama serve` + `ollama pull llama3.2:3b` + `ollama pull nomic-embed-text`
-
-### 2. Install dependencies
-
+#### D. Start the backend container
 ```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 3. Configure environment
-
-```bash
-cp .env.example .env
-# Edit .env with your database URL, JWT secret, etc.
-```
-
-### 4. Run database migrations
-
-```bash
-alembic upgrade head
-```
-
-### 5. Start the server
-
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-API docs available at: http://localhost:8000/docs  
-Alternative docs: http://localhost:8000/redoc
-
----
-
-## Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://user:pass@localhost/hub` |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
-| `SECRET_KEY` | JWT signing secret (min 32 chars, random) | `openssl rand -hex 32` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT access token lifetime | `30` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime | `7` |
-| `OLLAMA_BASE_URL` | Ollama API URL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Chat model name | `llama3.2:3b` |
-| `OLLAMA_EMBED_MODEL` | Embedding model | `nomic-embed-text` |
-| `CHROMA_HOST` | ChromaDB host | `localhost` |
-| `CHROMA_PORT` | ChromaDB port | `8002` |
-| `RABBITMQ_URL` | RabbitMQ connection string | `amqp://guest:guest@localhost:5672/` |
-| `AWS_ACCESS_KEY_ID` | AWS credentials | from instructor |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials | from instructor |
-| `AWS_REGION` | AWS region | `ap-south-1` |
-| `S3_BUCKET_NAME` | S3 bucket for file uploads | `hub-files-dev` |
-| `GOOGLE_CLIENT_ID` | Google OAuth (optional) | from Google Console |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth (optional) | from Google Console |
-
----
-
-## API Endpoints (detailed)
-
-### Auth (`/api/v1/auth`)
-
-#### POST `/register`
-Register a new user.
-
-Request body:
-```json
-{
-  "email": "student@tkmce.ac.in",
-  "password": "SecurePass123!",
-  "full_name": "John Doe",
-  "phone": "+919876543210"
-}
-```
-Response `201`:
-```json
-{
-  "id": "uuid",
-  "email": "student@tkmce.ac.in",
-  "full_name": "John Doe",
-  "created_at": "2026-05-23T10:00:00Z"
-}
-```
-
-#### POST `/login`
-Returns access + refresh tokens.
-
-Request body:
-```json
-{
-  "email": "student@tkmce.ac.in",
-  "password": "SecurePass123!"
-}
-```
-Response `200`:
-```json
-{
-  "access_token": "eyJ...",
-  "refresh_token": "eyJ...",
-  "token_type": "bearer"
-}
-```
-
-#### POST `/refresh`
-Exchange refresh token for a new access token.
-
-Request body:
-```json
-{ "refresh_token": "eyJ..." }
-```
-
-#### GET `/me`
-Returns current user profile. Requires `Authorization: Bearer <access_token>` header.
-
-#### PUT `/profile`
-Update name, phone number.
-
-#### POST `/avatar`
-Multipart file upload. Stores in S3 (or local), updates `avatar_url`.
-
----
-
-### Chat (`/api/v1/chat`)
-
-#### POST `/sessions`
-Create a new chat session.
-
-Response:
-```json
-{ "id": "uuid", "title": "New Chat", "created_at": "..." }
-```
-
-#### GET `/sessions`
-List all sessions for current user.
-
-#### DELETE `/sessions/{session_id}`
-Delete session and all messages.
-
-#### POST `/sessions/{session_id}/messages`
-Send a message. Response is **Server-Sent Events** (SSE stream).
-
-Request body:
-```json
-{
-  "content": "What is machine learning?",
-  "use_rag": true
-}
-```
-
-SSE stream format:
-```
-data: {"delta": "Machine"}
-data: {"delta": " learning"}
-data: {"delta": " is..."}
-data: [DONE]
-```
-
-#### GET `/sessions/{session_id}/messages`
-Return full message history.
-
----
-
-### Documents (`/api/v1/documents`)
-
-#### POST `/upload`
-Upload a file. Multipart form data, field name `file`.
-
-Supported types: `.pdf`, `.docx`, `.txt`, `.png`, `.jpg`, `.jpeg`
-
-Response `202` (accepted — processing happens asynchronously):
-```json
-{
-  "id": "uuid",
-  "filename": "lecture_notes.pdf",
-  "file_type": "pdf",
-  "file_size": 204800,
-  "processed": false
-}
-```
-
-#### GET `/`
-List all documents for current user.
-
-#### DELETE `/{document_id}`
-Delete file from storage + remove vectors from ChromaDB.
-
----
-
-### Todos (`/api/v1/todos`)
-
-#### GET `/`
-Query params: `?completed=true|false`
-
-#### POST `/`
-```json
-{
-  "title": "Review chapter 3",
-  "description": "Focus on neural networks",
-  "due_date": "2026-05-25T18:00:00Z"
-}
-```
-
-#### PUT `/{todo_id}`
-Update title, description, due_date.
-
-#### PUT `/{todo_id}/complete`
-Toggle completed status. Body: `{ "completed": true }`
-
-#### DELETE `/{todo_id}`
-
----
-
-### Admin (`/api/v1/admin`)
-
-Requires `is_admin: true` on the user JWT claim.
-
-#### POST `/users/bulk`
-Upload CSV file. Columns required: `email`, `full_name`, `phone` (optional).
-
-System creates accounts with random temp passwords and queues credential emails/SMS.
-
-Response `202`:
-```json
-{ "job_id": "uuid", "total_users": 42 }
+docker compose up --build
 ```
 
 ---
 
-## RAG Implementation Guide
+### 4. Accessing the APIs (All OS)
+*   **FastAPI Web App & Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 
-The RAG pipeline runs when a user sends a chat message with `"use_rag": true`.
+## Testing the API
+Once the server is running (either locally or via Docker), you can test the APIs interactively by navigating to:
+**[http://localhost:8000/docs](http://localhost:8000/docs)**
 
-### Step 1 — Document ingestion (happens on upload)
+## Running Automated Tests
 
-```
-Upload → Extract text → Chunk (500 tokens, 50 overlap) → Embed → Store in ChromaDB
-```
+Tests are categorized into **live integration tests** (which require running local databases, Qdrant, and Ollama) and **in-memory mocked unit tests**.
 
-Text extraction libraries:
-- **PDF**: `pymupdf` (`import fitz`)
-- **DOCX**: `python-docx`
-- **TXT**: plain read
-- **Images**: `pytesseract` + `Pillow`
+### Running Tests Locally:
+* **Run ONLY Mocked Unit/CI Tests (Default, runs instantly without local services):**
+  ```bash
+  pytest -m "not live"
+  ```
+* **Run ONLY Live Integration Tests (requires running local services):**
+  ```bash
+  pytest -m "live"
+  ```
+* **Run all tests:**
+  ```bash
+  pytest
+  ```
 
-```python
-# Example chunking
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-chunks = splitter.split_text(full_text)
-```
-
-### Step 2 — Retrieval (on each chat message)
-
-```python
-# Embed the user query
-query_embedding = ollama.embeddings(model="nomic-embed-text", prompt=user_message)
-
-# Query ChromaDB for top-5 similar chunks
-results = collection.query(
-    query_embeddings=[query_embedding["embedding"]],
-    n_results=5,
-    where={"user_id": current_user.id}
-)
-```
-
-### Step 3 — Prompt injection
-
-```python
-context = "\n\n".join(results["documents"][0])
-
-system_prompt = f"""You are Hub, an AI assistant for TKM students.
-Use the following context to answer the question. If the context doesn't help, use your general knowledge.
-
-Context:
-{context}
-"""
-```
-
----
-
-## Running Tests
-
-```bash
-pytest tests/ -v
-```
-
-Tests use a separate `TEST_DATABASE_URL` pointed at a test database. Fixtures in `conftest.py` create and teardown tables per test session.
-
----
-
-## Dockerfile
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
----
+### Running Tests inside Docker:
+* **Run only unit tests inside Docker container:**
+  ```bash
+  docker compose exec web pytest -m "not live"
+  ```
+* **Run only live integration tests inside Docker container:**
+  ```bash
+  docker compose exec web pytest -m "live"
+  ```
