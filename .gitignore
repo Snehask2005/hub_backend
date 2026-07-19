@@ -36,3 +36,9 @@ uploads/
 qdrant_storage/
 qdrant_data/
 chroma_data/
+.env
+
+node_modules/
+**/node_modules/
+dist/
+.vscode/

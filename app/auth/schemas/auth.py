@@ -19,11 +19,25 @@ class RegisterRequest(BaseModel):
     password: str
     full_name: str
     phone: str | None = None
+    otp:str
+class PhoneRequest(BaseModel):
+    phone: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordConfirm(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+class OtpVerifyRequest(BaseModel):
+    phone: str
+    otp: str
 
 
 class TokenResponse(BaseModel):
@@ -60,3 +74,15 @@ class GoogleLoginRequest(BaseModel):
     """Request body for POST /auth/google — client sends the Google ID token."""
     id_token: str
 
+    device_token: str | None = None  # FCM/APNs push token
+
+class LoginOtpResponse(BaseModel):
+    message: str
+    phone: str
+
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+class EmailOtpVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: str
